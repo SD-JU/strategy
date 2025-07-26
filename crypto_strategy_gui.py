@@ -7,21 +7,19 @@ import matplotlib.pyplot as plt
 import platform
 import os
 import matplotlib.font_manager as fm
+import urllib.request
 
-# ✅ 1. NanumGothic 폰트 설정 (Streamlit Cloud용)
+# ✅ NanumGothic 폰트 다운로드 및 설정 (Streamlit Cloud 호환)
 font_path = "/tmp/NanumGothic.ttf"
+font_url = "https://raw.githubusercontent.com/naver/nanumfont/master/ttf/NanumGothic.ttf"
 if not os.path.exists(font_path):
-    import urllib.request
-    urllib.request.urlretrieve(
-        "https://github.com/naver/nanumfont/blob/master/ttf/NanumGothic.ttf?raw=true",
-        font_path
-    )
+    urllib.request.urlretrieve(font_url, font_path)
     fm.fontManager.addfont(font_path)
 
 plt.rcParams['font.family'] = fm.FontProperties(fname=font_path).get_name()
 plt.rcParams['axes.unicode_minus'] = False
 
-# ✅ 2. 업비트 OHLCV 데이터 수집
+# ✅ 업비트 OHLCV 데이터 수집
 def get_ohlcv(market="KRW-BTC", count=100):
     url = "https://api.upbit.com/v1/candles/days"
     headers = {"Accept": "application/json"}
@@ -35,8 +33,7 @@ def get_ohlcv(market="KRW-BTC", count=100):
     df.columns = ['날짜', '시가', '고가', '저가', '종가', '거래량']
     return df
 
-# ✅ 3. 기술적 지표 계산
-
+# ✅ 기술적 지표 계산
 def compute_rsi(df, period=14):
     delta = df['종가'].diff()
     gain = delta.where(delta > 0, 0).rolling(window=period).mean()
@@ -59,14 +56,12 @@ def compute_indicators(df):
     df['VOL_MA20'] = df['거래량'].rolling(window=20).mean()
     return df
 
-# ✅ 4. 전략 해석
-
+# ✅ 전략 해석
 def strategy_suggestion(df):
     latest = df.iloc[-1]
     signals = []
     score = 0
 
-    # RSI
     if latest['RSI'] < 30:
         signals.append("📉 RSI < 30 → 과매도: 매수 유력"); score += 1
     elif latest['RSI'] > 70:
@@ -74,7 +69,6 @@ def strategy_suggestion(df):
     else:
         signals.append(f"RSI {latest['RSI']:.2f}: 중립 구간")
 
-    # 이평선
     if latest['종가'] > latest['MA20'] > latest['MA60']:
         signals.append("🔼 이평선 정배열: 상승 추세"); score += 1
     elif latest['종가'] < latest['MA20'] < latest['MA60']:
@@ -82,7 +76,6 @@ def strategy_suggestion(df):
     else:
         signals.append("이평선 혼조: 방향성 불분명")
 
-    # MACD
     if latest['MACD'] > latest['Signal']:
         signals.append("🟢 MACD > Signal → 매수 모멘텀"); score += 1
     elif latest['MACD'] < latest['Signal']:
@@ -90,7 +83,6 @@ def strategy_suggestion(df):
     else:
         signals.append("MACD 중립 상태")
 
-    # 볼린저밴드
     if latest['종가'] < latest['Lower']:
         signals.append("📉 볼린저 밴드 하단 이탈 → 기술적 반등 가능성"); score += 1
     elif latest['종가'] > latest['Upper']:
@@ -98,7 +90,6 @@ def strategy_suggestion(df):
     else:
         signals.append("볼린저 밴드 내 안정 구간")
 
-    # 거래량 분석
     if latest['거래량'] > latest['VOL_MA20'] * 1.2:
         signals.append("📊 거래량 급증 → 매수세 유입 가능성"); score += 1
 
@@ -112,8 +103,7 @@ def strategy_suggestion(df):
 
     return signals
 
-# ✅ 5. Streamlit 앱 실행
-
+# ✅ Streamlit 앱 실행
 def main():
     st.set_page_config(page_title="코인 전략 분석기", layout="wide")
     st.title("📊 BTC/ETH/XRP 종합 전략 분석 (RSI, MACD, MA, 볼린저밴드, 거래량)")
@@ -129,7 +119,7 @@ def main():
     df = get_ohlcv(market_code)
     df = compute_indicators(df)
 
-    # 📈 차트 출력
+    # 📈 가격 및 이평선/볼린저밴드 차트
     st.subheader(f"📈 {selected_coin} 가격 및 기술적 지표")
     fig, ax = plt.subplots(figsize=(10, 4))
     ax.plot(df['날짜'], df['종가'], label='종가', color='blue')
