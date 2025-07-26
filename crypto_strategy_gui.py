@@ -1,25 +1,20 @@
-# crypto_strategy_app.py
 import streamlit as st
 import pandas as pd
-import numpy as np
 import requests
 import matplotlib.pyplot as plt
 import platform
-import os
-import matplotlib.font_manager as fm
-import urllib.request
+import numpy as np
 
-# ✅ NanumGothic 폰트 다운로드 및 설정 (Streamlit Cloud 호환)
-font_path = "/tmp/NanumGothic.ttf"
-font_url = "https://raw.githubusercontent.com/naver/nanumfont/master/ttf/NanumGothic.ttf"
-if not os.path.exists(font_path):
-    urllib.request.urlretrieve(font_url, font_path)
-    fm.fontManager.addfont(font_path)
-
-plt.rcParams['font.family'] = fm.FontProperties(fname=font_path).get_name()
+# 한글 폰트 설정
+if platform.system() == 'Windows':
+    plt.rcParams['font.family'] = 'Malgun Gothic'
+elif platform.system() == 'Darwin':
+    plt.rcParams['font.family'] = 'AppleGothic'
+else:
+    plt.rcParams['font.family'] = 'NanumGothic'
 plt.rcParams['axes.unicode_minus'] = False
 
-# ✅ 업비트 OHLCV 데이터 수집
+# 업비트 OHLCV 데이터 수집
 def get_ohlcv(market="KRW-BTC", count=100):
     url = "https://api.upbit.com/v1/candles/days"
     headers = {"Accept": "application/json"}
@@ -33,80 +28,115 @@ def get_ohlcv(market="KRW-BTC", count=100):
     df.columns = ['날짜', '시가', '고가', '저가', '종가', '거래량']
     return df
 
-# ✅ 기술적 지표 계산
-def compute_rsi(df, period=14):
-    delta = df['종가'].diff()
-    gain = delta.where(delta > 0, 0).rolling(window=period).mean()
-    loss = -delta.where(delta < 0, 0).rolling(window=period).mean()
-    rs = gain / loss
-    return 100 - (100 / (1 + rs))
-
+# 지표 계산
 def compute_indicators(df):
-    df['RSI'] = compute_rsi(df)
+    # 이동평균선
     df['MA20'] = df['종가'].rolling(window=20).mean()
     df['MA60'] = df['종가'].rolling(window=60).mean()
+
+    # 볼린저 밴드
     df['STD'] = df['종가'].rolling(window=20).std()
     df['Upper'] = df['MA20'] + 2 * df['STD']
     df['Lower'] = df['MA20'] - 2 * df['STD']
+
+    # RSI
+    delta = df['종가'].diff()
+    gain = delta.where(delta > 0, 0).rolling(window=14).mean()
+    loss = -delta.where(delta < 0, 0).rolling(window=14).mean()
+    rs = gain / loss
+    df['RSI'] = 100 - (100 / (1 + rs))
+
+    # MACD
     df['EMA12'] = df['종가'].ewm(span=12, adjust=False).mean()
     df['EMA26'] = df['종가'].ewm(span=26, adjust=False).mean()
     df['MACD'] = df['EMA12'] - df['EMA26']
     df['Signal'] = df['MACD'].ewm(span=9, adjust=False).mean()
-    df['ATR'] = df['고가'] - df['저가']
+
+    # 거래량 평균
     df['VOL_MA20'] = df['거래량'].rolling(window=20).mean()
+
+    # 거래량 상승 여부
+    df['VOL_RISE'] = df['거래량'] > df['VOL_MA20']
+
+    # 변동성 지표 (ATR)
+    df['H-L'] = df['고가'] - df['저가']
+    df['H-PC'] = abs(df['고가'] - df['종가'].shift(1))
+    df['L-PC'] = abs(df['저가'] - df['종가'].shift(1))
+    df['TR'] = df[['H-L', 'H-PC', 'L-PC']].max(axis=1)
+    df['ATR'] = df['TR'].rolling(window=14).mean()
+
     return df
 
-# ✅ 전략 해석
+# 전략 제안
 def strategy_suggestion(df):
     latest = df.iloc[-1]
     signals = []
-    score = 0
 
+    # RSI 기반
     if latest['RSI'] < 30:
-        signals.append("📉 RSI < 30 → 과매도: 매수 유력"); score += 1
+        signals.append("📉 RSI < 30 → 과매도: 매수 유력")
     elif latest['RSI'] > 70:
         signals.append("📈 RSI > 70 → 과매수: 매도 유력")
     else:
         signals.append(f"RSI {latest['RSI']:.2f}: 중립 구간")
 
-    if latest['종가'] > latest['MA20'] > latest['MA60']:
-        signals.append("🔼 이평선 정배열: 상승 추세"); score += 1
-    elif latest['종가'] < latest['MA20'] < latest['MA60']:
+    # 이동평균선 배열
+    if latest['종가'] > latest['MA20'] and latest['MA20'] > latest['MA60']:
+        signals.append("🔼 이평선 정배열: 상승 추세")
+    elif latest['종가'] < latest['MA20'] and latest['MA20'] < latest['MA60']:
         signals.append("🔽 이평선 역배열: 하락 추세")
     else:
         signals.append("이평선 혼조: 방향성 불분명")
 
+    # MACD 분석
     if latest['MACD'] > latest['Signal']:
-        signals.append("🟢 MACD > Signal → 매수 모멘텀"); score += 1
+        signals.append("🟢 MACD > Signal → 매수 모멘텀")
     elif latest['MACD'] < latest['Signal']:
         signals.append("🔴 MACD < Signal → 매도 모멘텀")
     else:
         signals.append("MACD 중립 상태")
 
+    # 볼린저 밴드
     if latest['종가'] < latest['Lower']:
-        signals.append("📉 볼린저 밴드 하단 이탈 → 기술적 반등 가능성"); score += 1
+        signals.append("📉 볼린저 밴드 하단 이탈 → 기술적 반등 가능성")
     elif latest['종가'] > latest['Upper']:
         signals.append("📈 볼린저 밴드 상단 돌파 → 과열 신호")
     else:
         signals.append("볼린저 밴드 내 안정 구간")
 
-    if latest['거래량'] > latest['VOL_MA20'] * 1.2:
-        signals.append("📊 거래량 급증 → 매수세 유입 가능성"); score += 1
-
-    # 종합 판단
-    if score >= 4:
-        signals.append("📌 종합 판단: ✅ 강한 매수 시점")
-    elif score >= 2:
-        signals.append("📌 종합 판단: ⏳ 관망 또는 약한 매수")
+    # 거래량 분석
+    if latest['VOL_RISE']:
+        signals.append("💹 거래량 평균 상회 → 관심 집중")
     else:
-        signals.append("📌 종합 판단: ⛔ 매도 또는 관망 추천")
+        signals.append("🔕 거래량 평균 이하 → 관망")
+
+    # ATR 분석
+    if latest['ATR'] > df['ATR'].mean():
+        signals.append("📊 ATR 상승 → 높은 변동성")
+    else:
+        signals.append("📉 ATR 하락 → 낮은 변동성")
+
+    # 종합 전략 점수
+    score = 0
+    if latest['RSI'] < 30: score += 1
+    if latest['종가'] < latest['Lower']: score += 1
+    if latest['MACD'] > latest['Signal']: score += 1
+    if latest['종가'] > latest['MA20'] and latest['MA20'] > latest['MA60']: score += 1
+    if latest['VOL_RISE']: score += 1
+
+    if score >= 4:
+        signals.append("📌 종합 판단: ✅ 강한 매수 신호")
+    elif score <= 1:
+        signals.append("📌 종합 판단: ⛔ 매도 또는 관망")
+    else:
+        signals.append("📌 종합 판단: ⏳ 관망 또는 약한 매수")
 
     return signals
 
-# ✅ Streamlit 앱 실행
+# Streamlit 앱 구성
 def main():
-    st.set_page_config(page_title="코인 전략 분석기", layout="wide")
-    st.title("📊 BTC/ETH/XRP 종합 전략 분석 (RSI, MACD, MA, 볼린저밴드, 거래량)")
+    st.set_page_config(page_title="종합 암호화폐 전략 분석기", layout="wide")
+    st.title("📊 BTC / ETH / XRP 전략 분석 (기술적 + 심리적 지표 기반)")
 
     coin_dict = {
         "비트코인 (BTC)": "KRW-BTC",
@@ -119,18 +149,20 @@ def main():
     df = get_ohlcv(market_code)
     df = compute_indicators(df)
 
-    # 📈 가격 및 이평선/볼린저밴드 차트
+    # 가격 및 이평선 차트
     st.subheader(f"📈 {selected_coin} 가격 및 기술적 지표")
-    fig, ax = plt.subplots(figsize=(10, 4))
-    ax.plot(df['날짜'], df['종가'], label='종가', color='blue')
+    st.caption("Close, 이평선(MA20, MA60), Bollinger Bands")
+    fig, ax = plt.subplots()
+    ax.plot(df['날짜'], df['종가'], label='Close', color='blue')
     ax.plot(df['날짜'], df['MA20'], label='MA20', color='orange')
     ax.plot(df['날짜'], df['MA60'], label='MA60', color='green')
-    ax.fill_between(df['날짜'], df['Upper'], df['Lower'], color='gray', alpha=0.3, label='볼린저 밴드')
+    ax.fill_between(df['날짜'], df['Upper'], df['Lower'], color='gray', alpha=0.2, label='Bollinger Bands')
     ax.legend()
     st.pyplot(fig)
 
-    # 📉 RSI & MACD
-    fig2, ax2 = plt.subplots(2, 1, figsize=(10, 6), sharex=True)
+    # RSI / MACD / 거래량 차트
+    st.subheader("📉 RSI / MACD / 거래량")
+    fig2, ax2 = plt.subplots(3, 1, figsize=(10, 8), sharex=True)
     ax2[0].plot(df['날짜'], df['RSI'], label='RSI', color='purple')
     ax2[0].axhline(70, color='red', linestyle='--')
     ax2[0].axhline(30, color='green', linestyle='--')
@@ -139,12 +171,16 @@ def main():
     ax2[1].plot(df['날짜'], df['Signal'], label='Signal', color='red')
     ax2[1].axhline(0, color='gray', linestyle='--')
     ax2[1].legend()
+    ax2[2].bar(df['날짜'], df['거래량'], label='Volume', color='gray')
+    ax2[2].plot(df['날짜'], df['VOL_MA20'], label='Volume Avg', color='orange')
+    ax2[2].legend()
     st.pyplot(fig2)
 
-    # 💡 전략 제안
+    # 전략 제안
     st.subheader("💡 전략 제안")
-    for s in strategy_suggestion(df):
+    suggestions = strategy_suggestion(df)
+    for s in suggestions:
         st.write("- " + s)
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
