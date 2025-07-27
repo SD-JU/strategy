@@ -151,12 +151,12 @@ def main():
     # 우상단 해설서 링크 작게 표시
     col1, col2 = st.columns([6, 1])
     with col2:
-        html_path = "crypto_strategy_guide.html"
-        if os.path.exists(html_path):
-            st.markdown(
-                f'<div style="text-align:right; font-size:12px;"><a href="{html_path}" target="_blank">📘 해설서</a></div>',
-                unsafe_allow_html=True
-            )
+        st.markdown(
+            '<div style="text-align:right; font-size:12px;">'
+            '<a href="https://sd-ju.github.io/strategy/crypto_strategy_guide.html" target="_blank">📘 해설서</a>'
+            '</div>',
+            unsafe_allow_html=True
+        )
 
     st.title("📊 BTC / ETH / XRP 전략 분석 (기술적 + 심리적 지표 기반)")
 
