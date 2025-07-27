@@ -5,9 +5,8 @@ import matplotlib.pyplot as plt
 import platform
 import numpy as np
 from datetime import datetime, timedelta
-import os
 
-# 한글 폰트 설정
+# 한국 포넌 설정
 if platform.system() == 'Windows':
     plt.rcParams['font.family'] = 'Malgun Gothic'
 elif platform.system() == 'Darwin':
@@ -16,7 +15,8 @@ else:
     plt.rcParams['font.family'] = 'NanumGothic'
 plt.rcParams['axes.unicode_minus'] = False
 
-# 📌 업비트 OHLCV 데이터 수집 (최대 365일)
+# 업빅 OHLCV 데이터 365일 까지 기술
+
 def get_ohlcv_extended(market="KRW-BTC", total_days=365):
     url = "https://api.upbit.com/v1/candles/days"
     headers = {"Accept": "application/json"}
@@ -43,7 +43,7 @@ def get_ohlcv_extended(market="KRW-BTC", total_days=365):
     df.columns = ['날짜', '시가', '고가', '저가', '종가', '거래량']
     return df
 
-# 📌 기술적 지표 계산
+# 기술적 지표 계산
 def compute_indicators(df):
     df['MA20'] = df['종가'].rolling(window=20).mean()
     df['MA60'] = df['종가'].rolling(window=60).mean()
@@ -70,7 +70,7 @@ def compute_indicators(df):
     df['OBV'] = (np.sign(df['종가'].diff()) * df['거래량']).fillna(0).cumsum()
     return df
 
-# 📌 전략 제안
+# 전략 제안
 def strategy_suggestion(df):
     latest = df.iloc[-1]
     prev = df.iloc[-2]
@@ -127,13 +127,14 @@ def strategy_suggestion(df):
     else:
         signals.append("📉 ATR 하락 → 낮은 변동성")
 
-    score = 0
-    if latest['RSI'] < 30: score += 1
-    if latest['종가'] < latest['Lower']: score += 1
-    if latest['MACD'] > latest['Signal']: score += 1
-    if latest['MACD_Hist'] > 0 and prev['MACD_Hist'] < 0: score += 1
-    if latest['OBV'] > prev['OBV']: score += 1
-    if latest['VOL_RISE']: score += 1
+    score = sum([
+        latest['RSI'] < 30,
+        latest['종가'] < latest['Lower'],
+        latest['MACD'] > latest['Signal'],
+        latest['MACD_Hist'] > 0 and prev['MACD_Hist'] < 0,
+        latest['OBV'] > prev['OBV'],
+        latest['VOL_RISE']
+    ])
 
     if score >= 4:
         signals.append("✅ 종합 판단: 강한 매수 신호")
@@ -144,28 +145,25 @@ def strategy_suggestion(df):
 
     return signals
 
-# 📌 Streamlit 앱
+# Streamlit 앱
+
 def main():
     st.set_page_config(page_title="종합 암호화폐 전략 분석기", layout="wide")
 
-    # 우상단 해설서 링크 작게 표시
-    col1, col2 = st.columns([6, 1])
-    with col2:
-        html_path = "crypto_strategy_guide.html"
-        if os.path.exists(html_path):
-            st.markdown(
-                f'<div style="text-align:right; font-size:12px;"><a href="{html_path}" target="_blank">📘 해설서</a></div>',
-                unsafe_allow_html=True
-            )
+    # 우상단 해설서 링크
+    st.markdown(
+        '<div style="position:absolute; top:10px; right:20px; font-size:12px;">
+        <a href="https://sd-ju.github.io/strategy/crypto_strategy_guide.html" target="_blank">📘 기술적 지표 해설서</a>
+        </div>',
+        unsafe_allow_html=True
+    )
 
     st.title("📊 BTC / ETH / XRP 전략 분석 (기술적 + 심리적 지표 기반)")
 
-    # 분석 기간 선택
     period_map = {"100일": 100, "180일 (6개월)": 180, "365일 (1년)": 365}
     selected_period_str = st.radio("분석 기간을 선택하세요:", list(period_map.keys()), horizontal=True)
     selected_period = period_map[selected_period_str]
 
-    # 코인 선택
     coin_dict = {
         "비트코인 (BTC)": "KRW-BTC",
         "이더리움 (ETH)": "KRW-ETH",
@@ -174,11 +172,9 @@ def main():
     selected_coin = st.selectbox("분석할 코인을 선택하세요:", list(coin_dict.keys()))
     market_code = coin_dict[selected_coin]
 
-    # 데이터 불러오기
     df = get_ohlcv_extended(market_code, total_days=selected_period)
     df = compute_indicators(df)
 
-    # 시세 및 기술적 지표 차트
     st.subheader(f"📈 {selected_coin} 가격 및 기술적 지표")
     fig, ax = plt.subplots()
     ax.plot(df['날짜'], df['종가'], label='Close', color='blue')
@@ -204,8 +200,7 @@ def main():
     st.pyplot(fig2)
 
     st.subheader("💡 전략 제안")
-    suggestions = strategy_suggestion(df)
-    for s in suggestions:
+    for s in strategy_suggestion(df):
         st.write("- " + s)
 
 if __name__ == "__main__":
