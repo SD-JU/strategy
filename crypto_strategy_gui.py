@@ -4,6 +4,7 @@ import requests
 import matplotlib.pyplot as plt
 import platform
 import numpy as np
+import os
 
 # 한글 폰트 설정
 if platform.system() == 'Windows':
@@ -52,7 +53,6 @@ def compute_indicators(df):
     df['L-PC'] = abs(df['저가'] - df['종가'].shift(1))
     df['TR'] = df[['H-L', 'H-PC', 'L-PC']].max(axis=1)
     df['ATR'] = df['TR'].rolling(window=14).mean()
-    # OBV 추가
     df['OBV'] = (np.sign(df['종가'].diff()) * df['거래량']).fillna(0).cumsum()
     return df
 
@@ -62,7 +62,6 @@ def strategy_suggestion(df):
     prev = df.iloc[-2]
     signals = []
 
-    # RSI
     if latest['RSI'] < 30:
         signals.append("📉 RSI < 30 → 과매도: 매수 유력")
     elif latest['RSI'] > 70:
@@ -70,7 +69,6 @@ def strategy_suggestion(df):
     else:
         signals.append(f"RSI {latest['RSI']:.2f}: 중립 구간")
 
-    # 이동평균선 배열
     if latest['종가'] > latest['MA20'] and latest['MA20'] > latest['MA60']:
         signals.append("🔼 이평선 정배열: 상승 추세")
     elif latest['종가'] < latest['MA20'] and latest['MA20'] < latest['MA60']:
@@ -78,7 +76,6 @@ def strategy_suggestion(df):
     else:
         signals.append("이평선 혼조: 방향성 불분명")
 
-    # MACD
     if latest['MACD'] > latest['Signal']:
         signals.append("🟢 MACD > Signal → 매수 모멘텀")
     elif latest['MACD'] < latest['Signal']:
@@ -86,13 +83,11 @@ def strategy_suggestion(df):
     else:
         signals.append("MACD 중립 상태")
 
-    # MACD Histogram
     if latest['MACD_Hist'] > 0 and prev['MACD_Hist'] < 0:
         signals.append("🟢 MACD Histogram 양전환 → 매수 시그널 발생")
     elif latest['MACD_Hist'] < 0 and prev['MACD_Hist'] > 0:
         signals.append("🔴 MACD Histogram 음전환 → 매도 시그널 발생")
 
-    # 볼린저 밴드
     if latest['종가'] < latest['Lower']:
         signals.append("📉 볼린저 밴드 하단 이탈 → 기술적 반등 가능성")
     elif latest['종가'] > latest['Upper']:
@@ -100,29 +95,24 @@ def strategy_suggestion(df):
     else:
         signals.append("볼린저 밴드 내 안정 구간")
 
-    # RSI + 볼린저 조합
     if latest['RSI'] < 30 and latest['종가'] < latest['Lower']:
         signals.append("📌 과매도 + 밴드 하단: 반등 확률 ↑")
 
-    # 거래량
     if latest['VOL_RISE']:
         signals.append("💹 거래량 평균 상회 → 관심 집중")
     else:
         signals.append("🔕 거래량 평균 이하 → 관망")
 
-    # OBV
     if latest['OBV'] > prev['OBV']:
         signals.append("📈 OBV 상승 → 매수세 유입")
     else:
         signals.append("📉 OBV 하락 → 매도세 우위")
 
-    # ATR
     if latest['ATR'] > df['ATR'].mean():
         signals.append("📊 ATR 상승 → 높은 변동성")
     else:
         signals.append("📉 ATR 하락 → 낮은 변동성")
 
-    # 종합 점수
     score = 0
     if latest['RSI'] < 30: score += 1
     if latest['종가'] < latest['Lower']: score += 1
@@ -184,6 +174,24 @@ def main():
     suggestions = strategy_suggestion(df)
     for s in suggestions:
         st.write("- " + s)
+
+    # 🔽 기술적 지표 해설서 보기
+    st.subheader("📘 기술적 지표 해설서 보기")
+    html_path = "crypto_strategy_guide.html"
+    if os.path.exists(html_path):
+        st.markdown(
+            f'<a href="{html_path}" target="_blank">🌐 해설서를 브라우저에서 열기</a>',
+            unsafe_allow_html=True
+        )
+        with open(html_path, "r", encoding="utf-8") as f:
+            st.download_button(
+                label="🔽 해설서 다운로드 (HTML)",
+                data=f.read(),
+                file_name="crypto_strategy_guide.html",
+                mime="text/html"
+            )
+    else:
+        st.warning("⚠️ 'crypto_strategy_guide.html' 파일이 현재 디렉터리에 없습니다.")
 
 if __name__ == "__main__":
     main()
