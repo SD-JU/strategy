@@ -16,7 +16,7 @@ else:
     plt.rcParams['font.family'] = 'NanumGothic'
 plt.rcParams['axes.unicode_minus'] = False
 
-# 📌 업비트 OHLCV 데이터 수집 (최대 365일)
+# 📌 업비트 OHLCV 데이터 수집
 def get_ohlcv_extended(market="KRW-BTC", total_days=365):
     url = "https://api.upbit.com/v1/candles/days"
     headers = {"Accept": "application/json"}
@@ -94,8 +94,6 @@ def strategy_suggestion(df):
         signals.append("🟢 MACD > Signal → 매수 모멘텀")
     elif latest['MACD'] < latest['Signal']:
         signals.append("🔴 MACD < Signal → 매도 모멘텀")
-    else:
-        signals.append("MACD 중립 상태")
 
     if latest['MACD_Hist'] > 0 and prev['MACD_Hist'] < 0:
         signals.append("🟢 MACD Histogram 양전환 → 매수 시그널 발생")
@@ -106,8 +104,6 @@ def strategy_suggestion(df):
         signals.append("📉 볼린저 밴드 하단 이탈 → 기술적 반등 가능성")
     elif latest['종가'] > latest['Upper']:
         signals.append("📈 볼린저 밴드 상단 돌파 → 과열 신호")
-    else:
-        signals.append("볼린저 밴드 내 안정 구간")
 
     if latest['RSI'] < 30 and latest['종가'] < latest['Lower']:
         signals.append("📌 과매도 + 밴드 하단: 반등 확률 ↑")
@@ -144,20 +140,9 @@ def strategy_suggestion(df):
 
     return signals
 
-# 📌 Streamlit 앱
+# 📌 Streamlit 앱 시작
 def main():
     st.set_page_config(page_title="종합 암호화폐 전략 분석기", layout="wide")
-
-    # 우상단 해설서 링크 작게 표시
-    col1, col2 = st.columns([6, 1])
-    with col2:
-        st.markdown(
-            '<div style="text-align:right; font-size:12px;">'
-            '<a href="https://sd-ju.github.io/strategy/crypto_strategy_guide.html" target="_blank">📘 해설서</a>'
-            '</div>',
-            unsafe_allow_html=True
-        )
-
     st.title("📊 BTC / ETH / XRP 전략 분석 (기술적 + 심리적 지표 기반)")
 
     # 분석 기간 선택
@@ -174,11 +159,11 @@ def main():
     selected_coin = st.selectbox("분석할 코인을 선택하세요:", list(coin_dict.keys()))
     market_code = coin_dict[selected_coin]
 
-    # 데이터 불러오기
+    # 데이터 수집 및 분석
     df = get_ohlcv_extended(market_code, total_days=selected_period)
     df = compute_indicators(df)
 
-    # 시세 및 기술적 지표 차트
+    # 시세 차트
     st.subheader(f"📈 {selected_coin} 가격 및 기술적 지표")
     fig, ax = plt.subplots()
     ax.plot(df['날짜'], df['종가'], label='Close', color='blue')
@@ -188,6 +173,7 @@ def main():
     ax.legend()
     st.pyplot(fig)
 
+    # 보조 지표 차트
     st.subheader("📉 RSI / MACD / 거래량")
     fig2, ax2 = plt.subplots(3, 1, figsize=(10, 8), sharex=True)
     ax2[0].plot(df['날짜'], df['RSI'], label='RSI', color='purple')
@@ -203,10 +189,25 @@ def main():
     ax2[2].legend()
     st.pyplot(fig2)
 
+    # 전략 제안
     st.subheader("💡 전략 제안")
     suggestions = strategy_suggestion(df)
     for s in suggestions:
         st.write("- " + s)
+
+    # 📘 해설서 다운로드 버튼
+    st.markdown("---")
+    st.subheader("📘 기술적 지표 해설서 보기")
+    if os.path.exists("crypto_strategy_guide.html"):
+        with open("crypto_strategy_guide.html", "rb") as f:
+            st.download_button(
+                label="📥 해설서 다운로드 (.html)",
+                data=f,
+                file_name="crypto_strategy_guide.html",
+                mime="text/html"
+            )
+    else:
+        st.warning("guide 파일이 현재 디렉토리에 없습니다.")
 
 if __name__ == "__main__":
     main()
