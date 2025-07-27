@@ -4,6 +4,7 @@ import requests
 import matplotlib.pyplot as plt
 import platform
 import numpy as np
+from datetime import datetime, timedelta
 import os
 
 # 한글 폰트 설정
@@ -15,21 +16,34 @@ else:
     plt.rcParams['font.family'] = 'NanumGothic'
 plt.rcParams['axes.unicode_minus'] = False
 
-# 업비트 OHLCV 데이터 수집
-def get_ohlcv(market="KRW-BTC", count=100):
+# 📌 업비트 OHLCV 데이터 수집 (최대 365일)
+def get_ohlcv_extended(market="KRW-BTC", total_days=365):
     url = "https://api.upbit.com/v1/candles/days"
     headers = {"Accept": "application/json"}
-    params = {"market": market, "count": count}
-    response = requests.get(url, headers=headers, params=params)
-    data = response.json()
-    df = pd.DataFrame(data)
+    all_data = []
+    to = None
+    remaining = total_days
+
+    while remaining > 0:
+        count = min(200, remaining)
+        params = {"market": market, "count": count}
+        if to:
+            params["to"] = to
+        response = requests.get(url, headers=headers, params=params)
+        data = response.json()
+        all_data.extend(data)
+        last_date = data[-1]['candle_date_time_kst']
+        to = (datetime.strptime(last_date, "%Y-%m-%dT%H:%M:%S") - timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%S")
+        remaining -= len(data)
+
+    df = pd.DataFrame(all_data)
     df['날짜'] = pd.to_datetime(df['candle_date_time_kst'])
     df = df.sort_values(by='날짜')
     df = df[['날짜', 'opening_price', 'high_price', 'low_price', 'trade_price', 'candle_acc_trade_volume']]
     df.columns = ['날짜', '시가', '고가', '저가', '종가', '거래량']
     return df
 
-# 지표 계산
+# 📌 기술적 지표 계산
 def compute_indicators(df):
     df['MA20'] = df['종가'].rolling(window=20).mean()
     df['MA60'] = df['종가'].rolling(window=60).mean()
@@ -56,7 +70,7 @@ def compute_indicators(df):
     df['OBV'] = (np.sign(df['종가'].diff()) * df['거래량']).fillna(0).cumsum()
     return df
 
-# 전략 제안
+# 📌 전략 제안
 def strategy_suggestion(df):
     latest = df.iloc[-1]
     prev = df.iloc[-2]
@@ -130,11 +144,28 @@ def strategy_suggestion(df):
 
     return signals
 
-# Streamlit 앱
+# 📌 Streamlit 앱
 def main():
     st.set_page_config(page_title="종합 암호화폐 전략 분석기", layout="wide")
+
+    # 우상단 해설서 링크 작게 표시
+    col1, col2 = st.columns([6, 1])
+    with col2:
+        html_path = "crypto_strategy_guide.html"
+        if os.path.exists(html_path):
+            st.markdown(
+                f'<div style="text-align:right; font-size:12px;"><a href="{html_path}" target="_blank">📘 해설서</a></div>',
+                unsafe_allow_html=True
+            )
+
     st.title("📊 BTC / ETH / XRP 전략 분석 (기술적 + 심리적 지표 기반)")
 
+    # 분석 기간 선택
+    period_map = {"100일": 100, "180일 (6개월)": 180, "365일 (1년)": 365}
+    selected_period_str = st.radio("분석 기간을 선택하세요:", list(period_map.keys()), horizontal=True)
+    selected_period = period_map[selected_period_str]
+
+    # 코인 선택
     coin_dict = {
         "비트코인 (BTC)": "KRW-BTC",
         "이더리움 (ETH)": "KRW-ETH",
@@ -143,9 +174,11 @@ def main():
     selected_coin = st.selectbox("분석할 코인을 선택하세요:", list(coin_dict.keys()))
     market_code = coin_dict[selected_coin]
 
-    df = get_ohlcv(market_code)
+    # 데이터 불러오기
+    df = get_ohlcv_extended(market_code, total_days=selected_period)
     df = compute_indicators(df)
 
+    # 시세 및 기술적 지표 차트
     st.subheader(f"📈 {selected_coin} 가격 및 기술적 지표")
     fig, ax = plt.subplots()
     ax.plot(df['날짜'], df['종가'], label='Close', color='blue')
@@ -174,24 +207,6 @@ def main():
     suggestions = strategy_suggestion(df)
     for s in suggestions:
         st.write("- " + s)
-
-    # 🔽 기술적 지표 해설서 보기
-    st.subheader("📘 기술적 지표 해설서 보기")
-    html_path = "crypto_strategy_guide.html"
-    if os.path.exists(html_path):
-        st.markdown(
-            f'<a href="{html_path}" target="_blank">🌐 해설서를 브라우저에서 열기</a>',
-            unsafe_allow_html=True
-        )
-        with open(html_path, "r", encoding="utf-8") as f:
-            st.download_button(
-                label="🔽 해설서 다운로드 (HTML)",
-                data=f.read(),
-                file_name="crypto_strategy_guide.html",
-                mime="text/html"
-            )
-    else:
-        st.warning("⚠️ 'crypto_strategy_guide.html' 파일이 현재 디렉터리에 없습니다.")
 
 if __name__ == "__main__":
     main()
